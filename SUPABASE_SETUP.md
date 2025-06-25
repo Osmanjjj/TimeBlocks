@@ -1,6 +1,6 @@
 # Supabase統合セットアップガイド
 
-このガイドでは、Simple Task ManagerアプリにSupabaseを統合する手順を説明します。
+このガイドでは、TimeBlocksアプリにSupabaseを統合する手順を説明します。
 
 ## 前提条件
 
