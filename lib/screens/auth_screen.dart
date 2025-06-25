@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/supabase_service.dart';
+import '../config/env.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -193,7 +194,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Simple Task Manager',
+                          Environment.appName,
                           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.bold,
                             color: Colors.blue.shade700,
