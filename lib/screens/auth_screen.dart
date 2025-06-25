@@ -55,8 +55,9 @@ class _AuthScreenState extends State<AuthScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('アカウントが作成されました！確認メールをチェックしてください。'),
+                content: Text('🎉 TimeBlocksへようこそ！\n📧 確認メールをお送りしました。メールボックスをチェックして、アカウントを有効化してください。'),
                 backgroundColor: Colors.green,
+                duration: Duration(seconds: 5),
               ),
             );
           }
@@ -71,8 +72,9 @@ class _AuthScreenState extends State<AuthScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('ログインしました！'),
+              content: Text('🚀 TimeBlocksにログインしました！\nタスク管理を始めましょう！'),
               backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
             ),
           );
         }
@@ -90,8 +92,9 @@ class _AuthScreenState extends State<AuthScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('エラーが発生しました: $e'),
+            content: Text('❌ 予期しないエラーが発生しました\n$e\n\nしばらく時間をおいてから再度お試しください'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -104,23 +107,28 @@ class _AuthScreenState extends State<AuthScreen> {
 
   String _getErrorMessage(String error) {
     if (error.contains('Invalid login credentials')) {
-      return 'メールアドレスまたはパスワードが正しくありません';
+      return '🔐 メールアドレスまたはパスワードが正しくありません\n入力内容をもう一度ご確認ください';
     } else if (error.contains('Email not confirmed')) {
-      return 'メールアドレスの確認が完了していません';
+      return '📧 メールアドレスの確認が完了していません\n受信したメールのリンクをクリックしてください';
     } else if (error.contains('User already registered')) {
-      return 'このメールアドレスは既に登録されています';
+      return '👤 このメールアドレスは既に登録されています\nログインをお試しください';
     } else if (error.contains('Password should be at least 6 characters')) {
-      return 'パスワードは6文字以上で入力してください';
+      return '🔒 パスワードは6文字以上で入力してください\nより安全なパスワードをお勧めします';
+    } else if (error.contains('Email rate limit exceeded')) {
+      return '⏰ メール送信の制限に達しました\n少し時間をおいてから再度お試しください';
+    } else if (error.contains('Invalid email')) {
+      return '📧 有効なメールアドレスを入力してください\n例: user@example.com';
     }
-    return error;
+    return '❌ エラーが発生しました: $error\nしばらく時間をおいてから再度お試しください';
   }
 
   Future<void> _resetPassword() async {
     if (_emailController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('メールアドレスを入力してください'),
+          content: Text('📧 メールアドレスを入力してください\nパスワードリセット用のメールをお送りします'),
           backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
         ),
       );
       return;
@@ -131,8 +139,9 @@ class _AuthScreenState extends State<AuthScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('パスワードリセットメールを送信しました'),
+            content: Text('📧 パスワードリセットメールをお送りしました！\nメールボックスをチェックして、新しいパスワードを設定してください。'),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 5),
           ),
         );
       }
@@ -140,8 +149,9 @@ class _AuthScreenState extends State<AuthScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('エラーが発生しました: $e'),
+            content: Text('❌ 予期しないエラーが発生しました\n$e\n\nしばらく時間をおいてから再度お試しください'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
