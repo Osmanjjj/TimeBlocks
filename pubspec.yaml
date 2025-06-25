@@ -1,5 +1,5 @@
-name: simple_task_app
-description: "A simple task management app with calendar and notifications"
+name: timeblocks
+description: "TimeBlocks - A visual time management app with calendar and notifications"
 publish_to: 'none'
 
 version: 1.0.0+1

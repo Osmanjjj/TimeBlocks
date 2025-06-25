@@ -11,14 +11,15 @@ import 'services/supabase_service.dart';
 import 'services/notification_service.dart';
 import 'services/calendar_service.dart';
 import 'screens/auth_screen.dart';
+import 'config/env.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   try {
     await Supabase.initialize(
-      url: 'https://cszdcnpfteimwinmjnqu.supabase.co',
-      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNzemRjbnBmdGVpbXdpbm1qbnF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA4MzA5NzgsImV4cCI6MjA2NjQwNjk3OH0.-qgJ8ZN97exWJsyF53y9ht1da_CvCfiEUI52MOloXzY',
+      url: Environment.supabaseUrl,
+      anonKey: Environment.supabaseAnonKey,
     );
     print('Supabase initialized successfully');
   } catch (e) {
@@ -50,7 +51,7 @@ class TaskApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Simple Task Manager',
+      title: Environment.appName,
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,
@@ -438,7 +439,7 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Simple Task Manager'),
+        title: const Text('TimeBlocks'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         bottom: TabBar(
           controller: _tabController,

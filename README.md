@@ -1,4 +1,4 @@
-# Simple Task Manager
+# TimeBlocks
 
 効率的なタスク管理を実現する多機能Flutterアプリです。
 
@@ -63,33 +63,42 @@
 - Flutter SDK 3.32.4+
 - Dart SDK 3.8.1+
 
-### セットアップ
+### 環境設定
+1. 環境テンプレートをコピーします。
+   ```bash
+   cp lib/config/env_template.dart lib/config/env.dart
+   ```
+
+2. `lib/config/env.dart` を編集し、Supabaseのクレデンシャルを追加します。
+   ```dart
+   class Environment {
+     static const String supabaseUrl = 'YOUR_SUPABASE_URL_HERE';
+     static const String supabaseAnonKey = 'YOUR_SUPABASE_ANON_KEY_HERE';
+     
+     static const String appName = 'TimeBlocks';
+     static const String bundleId = 'com.timeblocks.app';
+   }
+   ```
+
+**重要**: `lib/config/env.dart` ファイルは、機密性の高いAPIキーを含むため、バージョン管理システムにコミットしないでください。
+
+### Supabaseの設定
+1. [supabase.com](https://supabase.com) で新しいプロジェクトを作成します
+2. `supabase_schema.sql` のSQLスキーマをSupabaseのSQLエディターで実行します
+3. プロジェクトURLとanonキーを環境ファイルにコピーします
+
+### アプリの実行
 ```bash
-# 依存関係のインストール
-./flutter/bin/flutter pub get
-
-# Webで実行
-./flutter/bin/flutter run -d web-server --web-port 8080
-
-# ビルド
-./flutter/bin/flutter build web
-```
-
-### iOS開発
-```bash
-# CocoaPods更新
-cd ios && pod install && cd ..
-
-# Xcodeでプロジェクトを開く
-open ios/Runner.xcworkspace
+flutter pub get
+flutter run
 ```
 
 ## 📦 App Store準備状況
 
 ### ✅ 完了済み
 - [x] アプリアイコン作成（全サイズ対応）
-- [x] Bundle Identifier設定 (com.simpletaskmanager.app)
-- [x] アプリ名設定 (Simple Task Manager)
+- [x] Bundle Identifier設定 (com.timeblocks.app)
+- [x] アプリ名設定 (TimeBlocks)
 - [x] 権限設定（通知・カレンダー）
 - [x] 機能説明文・キーワード作成
 - [x] Webビルドでの動作確認
@@ -123,4 +132,4 @@ open ios/Runner.xcworkspace
 
 ---
 
-**Simple Task Manager** - 毎日のタスク管理を革新的に効率化
+**TimeBlocks** - 毎日のタスク管理を革新的に効率化

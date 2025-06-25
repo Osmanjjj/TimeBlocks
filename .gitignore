@@ -56,3 +56,10 @@ app_icon_1024.png
 
 # Log files
 *.log
+
+# Environment variables and secrets
+.env
+.env.local
+.env.development
+.env.production
+lib/config/env.dart
