@@ -57,5 +57,16 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>timeblocks.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>timeblocks</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

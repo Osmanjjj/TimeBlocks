@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:app_links/app_links.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:async';
 import 'dart:math';
@@ -22,6 +23,58 @@ void main() async {
       anonKey: Environment.supabaseAnonKey,
     );
     print('Supabase initialized successfully');
+    
+    // Handle auth state changes
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      final AuthChangeEvent event = data.event;
+      final Session? session = data.session;
+      
+      print('Auth state changed: $event');
+      
+      if (event == AuthChangeEvent.signedIn && session != null) {
+        print('User signed in: ${session.user.email}');
+      } else if (event == AuthChangeEvent.signedOut) {
+        print('User signed out');
+      } else if (event == AuthChangeEvent.tokenRefreshed) {
+        print('Token refreshed');
+      }
+    });
+    
+    // Handle deep links for authentication
+    AppLinks().getInitialAppLink().then((value) async {
+      if (value != null) {
+        final link = value.toString();
+        print('Initial deep link: $link');
+        // Handle authentication callback
+        if (link.contains('access_token') || link.contains('refresh_token')) {
+          print('Processing authentication callback from deep link');
+          try {
+            await Supabase.instance.client.auth.getSessionFromUrl(value);
+            print('Authentication successful from deep link');
+          } catch (e) {
+            print('Error processing authentication callback: $e');
+          }
+        }
+      }
+    });
+    
+    AppLinks().uriLinkStream.listen((uri) async {
+      if (uri != null) {
+        final link = uri.toString();
+        print('Deep link: $link');
+        // Handle authentication callback
+        if (link.contains('access_token') || link.contains('refresh_token')) {
+          print('Processing authentication callback from deep link');
+          try {
+            await Supabase.instance.client.auth.getSessionFromUrl(uri);
+            print('Authentication successful from deep link');
+          } catch (e) {
+            print('Error processing authentication callback: $e');
+          }
+        }
+      }
+    });
+    
   } catch (e) {
     print('Supabase initialization failed: $e');
     // Fallback: Continue without Supabase for local testing
@@ -62,8 +115,64 @@ class TaskApp extends StatelessWidget {
   }
 }
 
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
+
+  @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  bool _hasShownWelcomeMessage = false;
+
+  @override
+  void initState() {
+    super.initState();
+    
+    // Listen for authentication state changes
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      final AuthChangeEvent event = data.event;
+      final Session? session = data.session;
+      
+      if (event == AuthChangeEvent.signedIn && session != null && mounted) {
+        // Show welcome message only once per session
+        if (!_hasShownWelcomeMessage) {
+          _hasShownWelcomeMessage = true;
+          
+          // Delay to ensure the UI is ready
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '🎉 メール認証が完了しました！',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      const SizedBox(height: 4),
+                      Text('✅ ${session.user.email} でログインしました'),
+                      const SizedBox(height: 4),
+                      const Text('🚀 TimeBlocksへようこそ！タスク管理を始めましょう！'),
+                    ],
+                  ),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 5),
+                  behavior: SnackBarBehavior.floating,
+                  margin: const EdgeInsets.all(16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              );
+            }
+          });
+        }
+      } else if (event == AuthChangeEvent.signedOut && mounted) {
+        _hasShownWelcomeMessage = false;
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +181,16 @@ class AuthWrapper extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('認証状態を確認中...'),
+                ],
+              ),
+            ),
           );
         }
 

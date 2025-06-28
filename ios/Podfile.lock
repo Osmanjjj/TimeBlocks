@@ -1,7 +1,7 @@
 PODS:
   - add_2_calendar (0.0.1):
     - Flutter
-  - app_links (0.0.2):
+  - app_links (0.0.1):
     - Flutter
   - device_calendar (0.0.1):
     - Flutter
@@ -52,7 +52,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   add_2_calendar: e626377f607d055070093cbd56abd1fafa1a02a5
-  app_links: 76b66b60cc809390ca1ad69bfd66b998d2387ac7
+  app_links: c5161ac5ab5383ad046884568b4b91cb52df5d91
   device_calendar: b55b2c5406cfba45c95a59f9059156daee1f74ed
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
   flutter_local_notifications: ad39620c743ea4c15127860f4b5641649a988100

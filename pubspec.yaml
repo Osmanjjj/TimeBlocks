@@ -24,6 +24,8 @@ dependencies:
   # Supabase dependencies
   supabase_flutter: ^2.5.6
   crypto: ^3.0.3
+  # Deep link handling
+  app_links: ^3.5.0
 
 dev_dependencies:
   flutter_test:
