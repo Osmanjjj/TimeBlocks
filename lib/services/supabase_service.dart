@@ -73,7 +73,14 @@ class SupabaseService {
   static Future<void> resetPassword(String email) async {
     await client.auth.resetPasswordForEmail(
       email,
-      redirectTo: 'timeblocks://auth/callback',
+      redirectTo: 'timeblocks://auth/login',
+    );
+  }
+  
+  /// Update password
+  static Future<void> updatePassword(String newPassword) async {
+    await client.auth.updateUser(
+      UserAttributes(password: newPassword),
     );
   }
   

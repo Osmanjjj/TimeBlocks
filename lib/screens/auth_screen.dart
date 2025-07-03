@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/supabase_service.dart';
 import '../config/env.dart';
+import 'password_reset_screen.dart';
+import '../main.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -99,9 +101,23 @@ class _AuthScreenState extends State<AuthScreen> {
               const SnackBar(
                 content: Text('🚀 TimeBlocksにログインしました！\nタスク管理を始めましょう！'),
                 backgroundColor: Colors.green,
-                duration: Duration(seconds: 3),
+                duration: Duration(seconds: 1),
               ),
             );
+            
+            // Wait for SnackBar to show, then force navigation
+            await Future.delayed(const Duration(milliseconds: 800));
+            
+            // Force AuthWrapper to update
+            AuthWrapper.forceUpdate();
+            
+            // Force navigation to home screen
+            if (mounted) {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (context) => const TaskHomePage()),
+                (route) => false,
+              );
+            }
           }
         }
       }
@@ -378,7 +394,13 @@ class _AuthScreenState extends State<AuthScreen> {
                         // Forgot password (only for sign in)
                         if (!_isSignUp) ...[
                           TextButton(
-                            onPressed: _resetPassword,
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const PasswordResetScreen(),
+                                ),
+                              );
+                            },
                             child: const Text('パスワードを忘れた場合'),
                           ),
                           const SizedBox(height: 8),

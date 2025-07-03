@@ -12,8 +12,10 @@ import 'services/supabase_service.dart';
 import 'services/notification_service.dart';
 import 'services/calendar_service.dart';
 import 'screens/auth_screen.dart';
+import 'screens/password_update_screen.dart';
 import 'config/env.dart';
 import 'clock_hand_painter.dart';
+// import 'completed_task_painter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -99,14 +101,77 @@ void main() async {
   runApp(const TaskApp());
 }
 
-class TaskApp extends StatelessWidget {
+class TaskApp extends StatefulWidget {
   const TaskApp({super.key});
+
+  @override
+  State<TaskApp> createState() => _TaskAppState();
+}
+
+class _TaskAppState extends State<TaskApp> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  
+  @override
+  void initState() {
+    super.initState();
+    _setupDeepLinkHandling();
+  }
+  
+  void _setupDeepLinkHandling() {
+    // Handle deep links for password reset
+    AppLinks().uriLinkStream.listen((uri) async {
+      if (uri != null) {
+        final link = uri.toString();
+        print('Deep link received: $link');
+        
+        // Handle password reset callback
+        if (link.contains('type=recovery') || link.contains('auth/login')) {
+          print('Password reset callback detected');
+          
+          try {
+            // Get session from URL
+            final response = await Supabase.instance.client.auth.getSessionFromUrl(uri);
+            print('Session recovered from password reset link: ${response.session?.user?.email}');
+            
+            // Wait a moment for the session to be fully established
+            await Future.delayed(const Duration(milliseconds: 500));
+            
+            // Verify session is active
+            final currentUser = Supabase.instance.client.auth.currentUser;
+            print('Current user after session recovery: ${currentUser?.email}');
+            
+            // Navigate to password update screen
+            if (_navigatorKey.currentContext != null) {
+              Navigator.of(_navigatorKey.currentContext!).pushAndRemoveUntil(
+                MaterialPageRoute(
+                  builder: (context) => const PasswordUpdateScreen(),
+                ),
+                (route) => false,
+              );
+            }
+          } catch (e) {
+            print('Error processing password reset callback: $e');
+            // If session recovery fails, still navigate to password update screen
+            if (_navigatorKey.currentContext != null) {
+              Navigator.of(_navigatorKey.currentContext!).pushAndRemoveUntil(
+                MaterialPageRoute(
+                  builder: (context) => const PasswordUpdateScreen(),
+                ),
+                (route) => false,
+              );
+            }
+          }
+        }
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: Environment.appName,
       debugShowCheckedModeBanner: false,
+      navigatorKey: _navigatorKey,
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,
@@ -121,14 +186,24 @@ class AuthWrapper extends StatefulWidget {
 
   @override
   State<AuthWrapper> createState() => _AuthWrapperState();
+  
+  static void forceUpdate() {
+    _AuthWrapperState.forceUpdate();
+  }
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
   bool _hasShownWelcomeMessage = false;
+  static _AuthWrapperState? _instance;
+  
+  static void forceUpdate() {
+    _instance?.setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
+    _instance = this;
     
     // Listen for authentication state changes
     Supabase.instance.client.auth.onAuthStateChange.listen((data) {
@@ -174,13 +249,27 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
     });
   }
+  
+  @override
+  void dispose() {
+    _instance = null;
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<AuthState>(
       stream: SupabaseService.authStateChanges,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        // Always check current user state directly from Supabase
+        final currentUser = SupabaseService.currentUser;
+        final session = snapshot.hasData ? snapshot.data!.session : null;
+        
+        // Debug: Print current auth state
+        print('Auth state - StreamBuilder session: ${session?.user?.email}');
+        print('Auth state - Direct currentUser: ${currentUser?.email}');
+        
+        if (snapshot.connectionState == ConnectionState.waiting && currentUser == null) {
           return const Scaffold(
             body: Center(
               child: Column(
@@ -195,11 +284,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
           );
         }
 
-        final session = snapshot.hasData ? snapshot.data!.session : null;
+        // Use direct currentUser check as primary, session as fallback
+        final isAuthenticated = currentUser != null || (session != null && session.user != null);
         
-        if (session != null) {
+        if (isAuthenticated) {
+          // User is authenticated, show home page
           return const TaskHomePage();
         } else {
+          // User is not authenticated, show auth screen
           return const AuthScreen();
         }
       },
@@ -543,8 +635,8 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
         );
       }
       
-      // Tasks will be updated automatically via realtime listener
-      // await _loadTasks(); // Commented out as realtime handles this
+      // Force immediate UI update
+      await _loadTasks();
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -736,8 +828,9 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
                     centerSpaceRadius: 60,
                     sectionsSpace: 2,
                     pieTouchData: PieTouchData(
+                      enabled: true,
                       touchCallback: (FlTouchEvent event, pieTouchResponse) {
-                        if (event is FlTapUpEvent && pieTouchResponse != null) {
+                        if ((event is FlTapUpEvent || event is FlTapDownEvent) && pieTouchResponse != null) {
                           final touchedSection = pieTouchResponse.touchedSection;
                           if (touchedSection != null) {
                             _handleChartTap(touchedSection.touchedSectionIndex, todayTasks);
@@ -752,6 +845,11 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
                   size: const Size(200, 200),
                   painter: ClockHandPainter(DateTime.now()),
                 ),
+                // 完了タスクの横線を追加
+                // CustomPaint(
+                //   size: const Size(200, 200),
+                //   painter: CompletedTaskLinePainter(todayTasks),
+                // ),
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1371,130 +1469,270 @@ class _TaskDialogState extends State<TaskDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
       child: Container(
         width: MediaQuery.of(context).size.width * 0.9,
         height: MediaQuery.of(context).size.height * 0.8,
-        padding: const EdgeInsets.all(16.0),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.blue.shade50,
+              Colors.purple.shade50,
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(24.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              widget.task == null ? 'タスクを追加' : 'タスクを編集',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade100,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    widget.task == null ? Icons.add_task : Icons.edit,
+                    color: Colors.blue.shade700,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Text(
+                  widget.task == null ? '新しいタスクを追加' : 'タスクを編集',
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
             Expanded(
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    TextField(
-                      controller: _titleController,
-                      decoration: const InputDecoration(
-                        labelText: 'タイトル',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _descriptionController,
-                      decoration: const InputDecoration(
-                        labelText: '説明（任意）',
-                        border: OutlineInputBorder(),
-                      ),
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 16),
-                    ListTile(
-                      leading: const Icon(Icons.calendar_today),
-                      title: const Text('日時'),
-                      subtitle: Text(DateFormat('yyyy/MM/dd HH:mm').format(_selectedDate)),
-                      onTap: _selectDateTime,
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        const Icon(Icons.timer),
-                        const SizedBox(width: 16),
-                        const Text('所要時間（分）:'),
-                        const SizedBox(width: 16),
-                        SizedBox(
-                          width: 80,
-                          child: TextField(
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              border: OutlineInputBorder(),
-                            ),
-                            controller: TextEditingController(text: _durationMinutes.toString()),
-                            onChanged: (value) {
-                              _durationMinutes = int.tryParse(value) ?? 30;
-                            },
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    SwitchListTile(
-                      title: const Text('リマインダー通知'),
-                      subtitle: const Text('指定した時間前に通知'),
-                      value: _hasReminder,
-                      onChanged: (value) {
-                        setState(() {
-                          _hasReminder = value;
-                        });
-                      },
-                    ),
-                    if (_hasReminder) ...[
-                      const SizedBox(height: 8),
-                      const Text('通知タイミング:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8.0,
-                        children: _availableReminders.map((minutes) {
-                          return FilterChip(
-                            label: Text(_getReminderText(minutes)),
-                            selected: _reminderMinutes.contains(minutes),
-                            onSelected: (selected) {
-                              setState(() {
-                                if (selected) {
-                                  if (!_reminderMinutes.contains(minutes)) {
-                                    _reminderMinutes.add(minutes);
-                                    _reminderMinutes.sort();
-                                  }
-                                } else {
-                                  _reminderMinutes.remove(minutes);
-                                }
-                              });
-                            },
-                          );
-                        }).toList(),
+                        ],
                       ),
-                    ],
-                    const SizedBox(height: 16),
-                    SwitchListTile(
-                      title: const Text('カレンダーに追加'),
-                      subtitle: const Text('デバイスのカレンダーに追加'),
-                      value: _addToCalendar,
-                      onChanged: (value) {
-                        setState(() {
-                          _addToCalendar = value;
-                        });
-                      },
+                      child: TextField(
+                        controller: _titleController,
+                        decoration: InputDecoration(
+                          labelText: 'タイトル',
+                          prefixIcon: Icon(Icons.title, color: Colors.blue.shade600),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: TextField(
+                        controller: _descriptionController,
+                        decoration: InputDecoration(
+                          labelText: '説明（任意）',
+                          prefixIcon: Icon(Icons.description, color: Colors.blue.shade600),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                        ),
+                        maxLines: 3,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: ListTile(
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(Icons.calendar_today, color: Colors.green.shade700),
+                        ),
+                        title: const Text('日時', style: TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text(
+                          DateFormat('yyyy/MM/dd HH:mm').format(_selectedDate),
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                        onTap: _selectDateTime,
+                        trailing: Icon(Icons.arrow_forward_ios, color: Colors.grey.shade400, size: 16),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade100,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(Icons.timer, color: Colors.orange.shade700),
+                          ),
+                          const SizedBox(width: 16),
+                          const Text('所要時間:', style: TextStyle(fontWeight: FontWeight.w600)),
+                          const Spacer(),
+                          SizedBox(
+                            width: 80,
+                            child: TextField(
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                suffixText: '分',
+                              ),
+                              controller: TextEditingController(text: _durationMinutes.toString()),
+                              onChanged: (value) {
+                                _durationMinutes = int.tryParse(value) ?? 30;
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('キャンセル'),
+                Expanded(
+                  child: Container(
+                    height: 50,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: TextButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(
+                        'キャンセル',
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                ElevatedButton(
-                  onPressed: _saveTask,
-                  child: const Text('保存'),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Container(
+                    height: 50,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.blue.shade600,
+                          Colors.purple.shade600,
+                        ],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.blue.withOpacity(0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ElevatedButton(
+                      onPressed: _saveTask,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Text(
+                        '保存',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
