@@ -6,13 +6,14 @@ import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:async';
-import 'dart:math';
+import 'dart:math' as math;
 import 'models/task.dart';
 import 'services/supabase_service.dart';
 import 'services/notification_service.dart';
 import 'services/calendar_service.dart';
 import 'screens/auth_screen.dart';
 import 'config/env.dart';
+import 'clock_hand_painter.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -215,17 +216,21 @@ class TaskHomePage extends StatefulWidget {
 
 class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMixin {
   List<Task> _tasks = [];
+  late TabController _tabController;
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
+  Timer? _chartUpdateTimer;
+  StreamSubscription<List<Map<String, dynamic>>>? _tasksSubscription;
+  static _TaskHomePageState? _instance;
   CalendarFormat _calendarFormat = CalendarFormat.month;
-  late TabController _tabController;
-  Timer? _chartUpdateTimer; // Timer for chart updates
 
   @override
   void initState() {
     super.initState();
+    _instance = this;
     _tabController = TabController(length: 3, vsync: this);
     _loadTasks();
+    _setupRealtimeListener();
     
     // Start timer for chart updates when on chart tab
     _tabController.addListener(() {
@@ -239,8 +244,9 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _instance = null;
     _stopChartUpdateTimer();
+    _tasksSubscription?.cancel();
     super.dispose();
   }
 
@@ -267,6 +273,23 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
     });
   }
 
+  void _setupRealtimeListener() {
+    _tasksSubscription = SupabaseService.listenToUserTasks().listen(
+      (tasksData) {
+        if (mounted) {
+          final tasks = tasksData.map((data) => Task.fromSupabase(data)).toList();
+          setState(() {
+            _tasks = tasks;
+          });
+          print('Tasks updated via realtime: ${tasks.length} tasks');
+        }
+      },
+      onError: (error) {
+        print('Error in realtime listener: $error');
+      },
+    );
+  }
+
   void _addTask() {
     showDialog(
       context: context,
@@ -285,8 +308,8 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
             // Handle notifications and calendar
             await _handleTaskNotificationsAndCalendar(task);
             
-            // Reload tasks from Supabase
-            await _loadTasks();
+            // Tasks will be updated automatically via realtime listener
+            // await _loadTasks(); // Commented out as realtime handles this
             
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -337,8 +360,8 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
             // Handle notifications and calendar
             await _handleTaskNotificationsAndCalendar(updatedTask);
             
-            // Reload tasks from Supabase
-            await _loadTasks();
+            // Tasks will be updated automatically via realtime listener
+            // await _loadTasks(); // Commented out as realtime handles this
             
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -482,8 +505,8 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
       // Cancel notifications
       await NotificationService.cancelTaskNotifications(task.id);
       
-      // Reload tasks from Supabase
-      await _loadTasks();
+      // Tasks will be updated automatically via realtime listener
+      // await _loadTasks(); // Commented out as realtime handles this
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -520,8 +543,8 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
         );
       }
       
-      // Reload tasks from Supabase
-      await _loadTasks();
+      // Tasks will be updated automatically via realtime listener
+      // await _loadTasks(); // Commented out as realtime handles this
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -683,8 +706,7 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
       return task.dueDate != null &&
           task.dueDate!.year == today.year &&
           task.dueDate!.month == today.month &&
-          task.dueDate!.day == today.day &&
-          !task.isCompleted;
+          task.dueDate!.day == today.day;
     }).toList();
 
     // Sort tasks by time
@@ -699,6 +721,9 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
+          // 現在のタスク状況表示
+          _buildCurrentTaskStatus(todayTasks, today),
+          const SizedBox(height: 16),
           Expanded(
             flex: 2,
             child: Stack(
@@ -710,7 +735,22 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
                     sections: _buildPieChartSections(todayTasks, today),
                     centerSpaceRadius: 60,
                     sectionsSpace: 2,
+                    pieTouchData: PieTouchData(
+                      touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                        if (event is FlTapUpEvent && pieTouchResponse != null) {
+                          final touchedSection = pieTouchResponse.touchedSection;
+                          if (touchedSection != null) {
+                            _handleChartTap(touchedSection.touchedSectionIndex, todayTasks);
+                          }
+                        }
+                      },
+                    ),
                   ),
+                ),
+                // 時計の針を追加
+                CustomPaint(
+                  size: const Size(200, 200),
+                  painter: ClockHandPainter(DateTime.now()),
                 ),
                 Column(
                   mainAxisSize: MainAxisSize.min,
@@ -755,24 +795,35 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
                           itemCount: todayTasks.length,
                           itemBuilder: (context, index) {
                             final task = todayTasks[index];
+                            final isCompleted = task.isCompleted;
                             return ListTile(
                               dense: true,
                               leading: Container(
                                 width: 12,
                                 height: 12,
                                 decoration: BoxDecoration(
-                                  color: _getTaskColor(index),
+                                  color: isCompleted 
+                                      ? _getTaskColor(index).withOpacity(0.3)
+                                      : _getTaskColor(index),
                                   shape: BoxShape.circle,
                                 ),
                               ),
                               title: Text(
                                 task.title,
-                                style: const TextStyle(fontSize: 14),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  decoration: isCompleted ? TextDecoration.lineThrough : null,
+                                  color: isCompleted ? Colors.grey : null,
+                                ),
                               ),
                               subtitle: Text(
-                                '${DateFormat('HH:mm').format(task.dueDate!)} - ${task.durationMinutes}分',
-                                style: const TextStyle(fontSize: 12),
+                                '${DateFormat('HH:mm').format(task.dueDate!)} - ${task.durationMinutes}分${isCompleted ? ' (完了)' : ''}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isCompleted ? Colors.grey : null,
+                                ),
                               ),
+                              onTap: () => _showTaskDetailDialog(task),
                             );
                           },
                         ),
@@ -822,10 +873,16 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
       }
       
       // Add the task
+      final taskColor = task.isCompleted 
+          ? _getTaskColor(i).withOpacity(0.3)
+          : _getCurrentRunningTask(todayTasks, today)?.id == task.id
+              ? Colors.green
+              : _getTaskColor(i);
+      
       sections.add(
         PieChartSectionData(
           value: task.durationMinutes.toDouble(),
-          color: _getTaskColor(i),
+          color: taskColor,
           title: task.durationMinutes > 30 ? task.title : '',
           radius: 80,
           titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
@@ -862,6 +919,245 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
       Colors.pink,
     ];
     return colors[index % colors.length];
+  }
+
+  // 現在実行中のタスクを取得
+  Task? _getCurrentRunningTask(List<Task> todayTasks, DateTime now) {
+    final currentMinutes = now.hour * 60 + now.minute;
+    
+    for (final task in todayTasks) {
+      if (task.isCompleted) continue;
+      
+      final taskStartMinutes = task.dueDate!.hour * 60 + task.dueDate!.minute;
+      final taskEndMinutes = taskStartMinutes + task.durationMinutes;
+      
+      if (currentMinutes >= taskStartMinutes && currentMinutes < taskEndMinutes) {
+        return task;
+      }
+    }
+    return null;
+  }
+
+  // 次の予定タスクを取得
+  Task? _getNextUpcomingTask(List<Task> todayTasks, DateTime now) {
+    final currentMinutes = now.hour * 60 + now.minute;
+    
+    Task? nextTask;
+    for (final task in todayTasks) {
+      if (task.isCompleted) continue;
+      
+      final taskStartMinutes = task.dueDate!.hour * 60 + task.dueDate!.minute;
+      
+      if (taskStartMinutes > currentMinutes) {
+        if (nextTask == null || taskStartMinutes < (nextTask.dueDate!.hour * 60 + nextTask.dueDate!.minute)) {
+          nextTask = task;
+        }
+      }
+    }
+    return nextTask;
+  }
+
+  // 時間差分のフォーマット
+  String _formatDuration(int minutes) {
+    if (minutes < 1) return 'まもなく';
+    if (minutes < 60) return '${minutes}分';
+    
+    final hours = minutes ~/ 60;
+    final remainingMinutes = minutes % 60;
+    
+    if (remainingMinutes == 0) {
+      return '${hours}時間';
+    } else {
+      return '${hours}時間${remainingMinutes}分';
+    }
+  }
+
+  // 現在のタスク状況を表示するウィジェット
+  Widget _buildCurrentTaskStatus(List<Task> todayTasks, DateTime now) {
+    final currentTask = _getCurrentRunningTask(todayTasks, now);
+    final nextTask = _getNextUpcomingTask(todayTasks, now);
+    
+    if (currentTask != null) {
+      final taskStartMinutes = currentTask.dueDate!.hour * 60 + currentTask.dueDate!.minute;
+      final taskEndMinutes = taskStartMinutes + currentTask.durationMinutes;
+      final currentMinutes = now.hour * 60 + now.minute;
+      final remainingMinutes = taskEndMinutes - currentMinutes;
+      
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.green.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.green.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.play_circle_filled, color: Colors.green, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  '現在実行中',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              currentTask.title,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              '開始: ${DateFormat('HH:mm').format(currentTask.dueDate!)} | '
+              '終了予定: ${DateFormat('HH:mm').format(currentTask.dueDate!.add(Duration(minutes: currentTask.durationMinutes)))} | '
+              '残り時間: ${_formatDuration(remainingMinutes)}',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+      );
+    } else if (nextTask != null) {
+      final nextTaskStartMinutes = nextTask.dueDate!.hour * 60 + nextTask.dueDate!.minute;
+      final currentMinutes = now.hour * 60 + now.minute;
+      final timeUntilNext = nextTaskStartMinutes - currentMinutes;
+      
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.blue.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.blue.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.schedule, color: Colors.blue, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  '空き時間',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '次の予定: ${nextTask.title}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              '開始まで: ${_formatDuration(timeUntilNext)} (${DateFormat('HH:mm').format(nextTask.dueDate!)}開始)',
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+      );
+    } else {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.grey, size: 20),
+            const SizedBox(width: 8),
+            const Text(
+              '今日の予定は全て完了しました',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  // チャートタップハンドラー
+  void _handleChartTap(int sectionIndex, List<Task> todayTasks) {
+    // セクションインデックスからタスクを特定
+    int taskIndex = 0;
+    int currentSectionIndex = 0;
+    
+    for (int i = 0; i < todayTasks.length; i++) {
+      final task = todayTasks[i];
+      final taskStartMinute = task.dueDate!.hour * 60.0 + task.dueDate!.minute;
+      
+      // 空き時間のセクションがある場合
+      if (i == 0 && taskStartMinute > 0) {
+        if (currentSectionIndex == sectionIndex) {
+          // 空き時間がタップされた場合は何もしない
+          return;
+        }
+        currentSectionIndex++;
+      } else if (i > 0) {
+        final prevTask = todayTasks[i - 1];
+        final prevTaskEndMinute = prevTask.dueDate!.hour * 60.0 + prevTask.dueDate!.minute + prevTask.durationMinutes;
+        if (taskStartMinute > prevTaskEndMinute) {
+          if (currentSectionIndex == sectionIndex) {
+            // 空き時間がタップされた場合は何もしない
+            return;
+          }
+          currentSectionIndex++;
+        }
+      }
+      
+      // タスクのセクション
+      if (currentSectionIndex == sectionIndex) {
+        _showTaskDetailDialog(task);
+        return;
+      }
+      currentSectionIndex++;
+    }
+  }
+
+  // タスク詳細ダイアログ
+  void _showTaskDetailDialog(Task task) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(task.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (task.description != null && task.description!.isNotEmpty) ...[
+              const Text('説明:', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(task.description!),
+              const SizedBox(height: 12),
+            ],
+            const Text('開始時刻:', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(DateFormat('yyyy/MM/dd HH:mm').format(task.dueDate!)),
+            const SizedBox(height: 8),
+            const Text('所要時間:', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text('${task.durationMinutes}分'),
+            const SizedBox(height: 8),
+            const Text('終了予定時刻:', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(DateFormat('HH:mm').format(task.dueDate!.add(Duration(minutes: task.durationMinutes)))),
+            const SizedBox(height: 8),
+            const Text('完了状態:', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(task.isCompleted ? '完了済み' : '未完了'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('閉じる'),
+          ),
+          if (!task.isCompleted)
+            ElevatedButton(
+              onPressed: () {
+                _toggleTaskCompletion(task);
+                Navigator.of(context).pop();
+              },
+              child: const Text('完了にする'),
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildTaskCard(Task task) {
