@@ -2,7 +2,7 @@
 
 ## 📱 アプリ情報
 - **アプリ名**: TimeBlocks
-- **バンドルID**: com.example.simpletaskmanager
+- **バンドルID**: com.osmanjjj.timeblocks
 - **バージョン**: 1.0.0
 - **ビルド番号**: 1
 
