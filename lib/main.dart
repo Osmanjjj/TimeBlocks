@@ -21,6 +21,10 @@ void main() async {
     await Supabase.initialize(
       url: Environment.supabaseUrl,
       anonKey: Environment.supabaseAnonKey,
+      authOptions: const FlutterAuthClientOptions(
+        authFlowType: AuthFlowType.pkce,
+        autoRefreshToken: true,
+      ),
     );
     print('Supabase initialized successfully');
     
@@ -176,10 +180,24 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    // First check if there's a current session
+    final currentSession = SupabaseService.client.auth.currentSession;
+    
     return StreamBuilder<AuthState>(
       stream: SupabaseService.authStateChanges,
+      initialData: currentSession != null ? AuthState(AuthChangeEvent.initialSession, currentSession) : null,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        // Check for existing session first
+        Session? session;
+        
+        if (currentSession != null) {
+          session = currentSession;
+        } else if (snapshot.hasData && snapshot.data!.session != null) {
+          session = snapshot.data!.session;
+        }
+        
+        // Only show loading if we're truly waiting for initial auth check
+        if (snapshot.connectionState == ConnectionState.waiting && currentSession == null) {
           return const Scaffold(
             body: Center(
               child: Column(
@@ -193,8 +211,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
             ),
           );
         }
-
-        final session = snapshot.hasData ? snapshot.data!.session : null;
         
         if (session != null) {
           return const TaskHomePage();
@@ -689,6 +705,18 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
 
     // Sort tasks by time
     todayTasks.sort((a, b) => a.dueDate!.compareTo(b.dueDate!));
+    
+    // Find current running task
+    Task? currentTask;
+    final now = DateTime.now();
+    for (final task in todayTasks) {
+      final taskStart = task.dueDate!;
+      final taskEnd = taskStart.add(Duration(minutes: task.durationMinutes));
+      if (now.isAfter(taskStart) && now.isBefore(taskEnd)) {
+        currentTask = task;
+        break;
+      }
+    }
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -699,6 +727,41 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
+          if (currentTask != null) ...[  
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.play_circle_filled, color: Colors.blue, size: 32),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${currentTask.title}中',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          '${DateFormat('HH:mm').format(currentTask.dueDate!)} - ${DateFormat('HH:mm').format(currentTask.dueDate!.add(Duration(minutes: currentTask.durationMinutes)))}',
+                          style: const TextStyle(fontSize: 14, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           Expanded(
             flex: 2,
             child: Stack(
@@ -706,6 +769,21 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
               children: [
                 PieChart(
                   PieChartData(
+                    pieTouchData: PieTouchData(
+                      touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                        if (!event.isInterestedForInteractions ||
+                            pieTouchResponse == null ||
+                            pieTouchResponse.touchedSection == null) {
+                          return;
+                        }
+                        
+                        final touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                        if (_sectionToTaskIndex.containsKey(touchedIndex)) {
+                          final taskIndex = _sectionToTaskIndex[touchedIndex]!;
+                          _showTaskDetails(todayTasks[taskIndex]);
+                        }
+                      },
+                    ),
                     startDegreeOffset: -90, // Start from top
                     sections: _buildPieChartSections(todayTasks, today),
                     centerSpaceRadius: 60,
@@ -773,6 +851,7 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
                                 '${DateFormat('HH:mm').format(task.dueDate!)} - ${task.durationMinutes}分',
                                 style: const TextStyle(fontSize: 12),
                               ),
+                              onTap: () => _showTaskDetails(task),
                             );
                           },
                         ),
@@ -785,8 +864,11 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
     );
   }
 
+  Map<int, int> _sectionToTaskIndex = {};
+  
   List<PieChartSectionData> _buildPieChartSections(List<Task> todayTasks, DateTime today) {
     List<PieChartSectionData> sections = [];
+    _sectionToTaskIndex.clear();
     
     if (todayTasks.isEmpty) {
       // If no tasks, show full day as free time
@@ -822,6 +904,7 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
       }
       
       // Add the task
+      _sectionToTaskIndex[sections.length] = i;  // Map section index to task index
       sections.add(
         PieChartSectionData(
           value: task.durationMinutes.toDouble(),
@@ -829,6 +912,8 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
           title: task.durationMinutes > 30 ? task.title : '',
           radius: 80,
           titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+          showTitle: true,
+          titlePositionPercentageOffset: 0.5,
         ),
       );
       
@@ -862,6 +947,55 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
       Colors.pink,
     ];
     return colors[index % colors.length];
+  }
+  
+  void _showTaskDetails(Task task) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(task.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (task.description != null && task.description!.isNotEmpty) ...[  
+              Text(
+                '説明:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(task.description!),
+              const SizedBox(height: 16),
+            ],
+            Text(
+              '日時:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Text(
+              DateFormat('yyyy年MM月dd日 HH:mm').format(task.dueDate!),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '所要時間:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Text('${task.durationMinutes}分'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('閉じる'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _editTask(task);
+            },
+            child: const Text('編集'),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildTaskCard(Task task) {
