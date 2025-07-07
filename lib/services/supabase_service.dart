@@ -47,7 +47,7 @@ class SupabaseService {
       email: email,
       password: password,
       data: displayName != null ? {'display_name': displayName} : null,
-      emailRedirectTo: 'timeblocks://auth/callback',
+      emailRedirectTo: 'osmanjjjtimeblocks://auth/callback',
     );
     return response;
   }
@@ -73,7 +73,14 @@ class SupabaseService {
   static Future<void> resetPassword(String email) async {
     await client.auth.resetPasswordForEmail(
       email,
-      redirectTo: 'timeblocks://auth/callback',
+      redirectTo: 'osmanjjjtimeblocks://auth/login',
+    );
+  }
+  
+  /// Update password
+  static Future<void> updatePassword(String newPassword) async {
+    await client.auth.updateUser(
+      UserAttributes(password: newPassword),
     );
   }
   

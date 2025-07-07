@@ -35,9 +35,5 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   
-  # App icons
-  assets:
-    - assets/images/
-
   # App icon configuration for iOS
   generate: true
