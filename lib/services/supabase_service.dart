@@ -83,6 +83,46 @@ class SupabaseService {
       UserAttributes(password: newPassword),
     );
   }
+
+  /// Delete user account and all associated data
+  static Future<void> deleteAccount() async {
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+    
+    if (user == null) {
+      throw Exception('User not authenticated');
+    }
+    
+    final userId = user.id;
+    
+    try {
+      print('Starting account deletion for user: $userId');
+      
+      // Call the database function to delete the account completely
+      print('Calling delete_user_account function...');
+      final response = await client.rpc('delete_user_account');
+      
+      print('Delete function response: $response');
+      
+      // Check if the deletion was successful
+      if (response != null && response['success'] == true) {
+        print('Account deleted successfully: ${response['message']}');
+        
+        // The user is already deleted from auth.users, so we don't need to sign out
+        // The auth session will be automatically invalidated
+        print('Account deletion completed successfully');
+      } else {
+        // If the function failed, throw an error with details
+        final errorMessage = response?['error'] ?? 'Unknown error occurred';
+        final errorDetail = response?['detail'] ?? '';
+        throw Exception('Account deletion failed: $errorMessage ($errorDetail)');
+      }
+      
+    } catch (e) {
+      print('Error during account deletion: $e');
+      rethrow;
+    }
+  }
   
   /// Get user profile
   static Future<Map<String, dynamic>?> getUserProfile() async {

@@ -13,6 +13,7 @@ import 'services/notification_service.dart';
 import 'services/calendar_service.dart';
 import 'screens/auth_screen.dart';
 import 'screens/password_update_screen.dart';
+import 'screens/settings_screen.dart';
 import 'config/env.dart';
 import 'clock_hand_painter.dart';
 // import 'completed_task_painter.dart';
@@ -685,13 +686,13 @@ class _TaskHomePageState extends State<TaskHomePage> with TickerProviderStateMix
         ),
         actions: [
           IconButton(
-            onPressed: () async {
-              await SupabaseService.signOut();
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (context) => const AuthScreen()),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
               );
             },
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.settings),
+            tooltip: '設定',
           ),
         ],
       ),
