@@ -46,47 +46,57 @@ class _AuthScreenState extends State<AuthScreen> {
               : null,
         );
 
-        if (response.user != null) {
-          // Create user profile
-          if (_displayNameController.text.trim().isNotEmpty) {
-            await SupabaseService.upsertUserProfile(
-              displayName: _displayNameController.text.trim(),
-            );
+        // サインアップは常に成功として扱う（メール確認が必要なため）
+        // Supabaseはメール確認が必要な場合でもユーザーオブジェクトを返す
+        if (mounted) {
+          // Create user profile if display name is provided
+          if (_displayNameController.text.trim().isNotEmpty && response.user != null) {
+            try {
+              await SupabaseService.upsertUserProfile(
+                displayName: _displayNameController.text.trim(),
+              );
+            } catch (profileError) {
+              // プロフィール作成エラーは無視（後で設定可能）
+              print('Profile creation error: $profileError');
+            }
           }
 
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '🎉 アカウント作成が完了しました！',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                    const SizedBox(height: 8),
-                    Text('📧 ${_emailController.text.trim()} に確認メールを送信しました'),
-                    const SizedBox(height: 4),
-                    const Text('✅ メール内のリンクをクリックしてアカウントを有効化してください'),
-                    const SizedBox(height: 4),
-                    const Text('⚠️ 迷惑メールフォルダもご確認ください'),
-                  ],
-                ),
-                backgroundColor: Colors.green,
-                duration: const Duration(seconds: 8),
-                behavior: SnackBarBehavior.floating,
-                margin: const EdgeInsets.all(16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '🎉 アカウント作成が完了しました！',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('📧 ${_emailController.text.trim()} に確認メールを送信しました'),
+                  const SizedBox(height: 4),
+                  const Text('✅ メール内のリンクをクリックしてアカウントを有効化してください'),
+                  const SizedBox(height: 4),
+                  const Text('⚠️ 迷惑メールフォルダもご確認ください'),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '💡 確認後、このアプリでログインできるようになります',
+                    style: TextStyle(fontStyle: FontStyle.italic),
+                  ),
+                ],
               ),
-            );
-            
-            // Clear form after successful signup
-            _emailController.clear();
-            _passwordController.clear();
-            _displayNameController.clear();
-            setState(() => _isSignUp = false); // Switch to login mode
-          }
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 10),
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          );
+          
+          // Clear form after successful signup
+          _emailController.clear();
+          _passwordController.clear();
+          _displayNameController.clear();
+          setState(() => _isSignUp = false); // Switch to login mode
         }
       } else {
         // Sign in
@@ -156,16 +166,18 @@ class _AuthScreenState extends State<AuthScreen> {
       return '🔐 ログイン情報が正しくありません\n\n• メールアドレスとパスワードをご確認ください\n• アカウントが有効化されているかご確認ください\n• パスワードを忘れた場合は「パスワードを忘れた場合」をクリック';
     } else if (error.contains('Email not confirmed')) {
       return '📧 メールアドレスの確認が完了していません\n\n• 登録時に送信された確認メールをチェックしてください\n• メール内のリンクをクリックしてアカウントを有効化してください\n• 迷惑メールフォルダもご確認ください';
-    } else if (error.contains('User already registered')) {
-      return '👤 このメールアドレスは既に登録されています\n\n• 「ログイン」に切り替えてサインインしてください\n• パスワードを忘れた場合は「パスワードを忘れた場合」をクリック';
+    } else if (error.contains('User already registered') || error.contains('already been registered')) {
+      return '✅ このメールアドレスは既に登録済みです\n\n• アカウント作成は完了しています\n• 「ログイン」に切り替えてサインインしてください\n• パスワードを忘れた場合は「パスワードを忘れた場合」をクリック\n• メール確認がまだの場合は、確認メールをチェックしてください';
     } else if (error.contains('Password should be at least 6 characters')) {
       return '🔒 パスワードは6文字以上で設定してください\n\n• 英数字を組み合わせることをお勧めします\n• セキュリティのため、推測されにくいパスワードを使用してください';
-    } else if (error.contains('Unable to validate email address')) {
+    } else if (error.contains('Unable to validate email address') || error.contains('Invalid email')) {
       return '📧 メールアドレスの形式が正しくありません\n\n• 正しいメールアドレス形式で入力してください\n• 例: user@example.com';
     } else if (error.contains('Signup is disabled')) {
       return '🚫 現在、新規アカウント作成を一時停止しています\n\n• しばらく時間をおいてから再度お試しください\n• 既存のアカウントをお持ちの場合はログインしてください';
-    } else if (error.contains('Too many requests')) {
+    } else if (error.contains('Too many requests') || error.contains('rate limit')) {
       return '⏰ リクエストが多すぎます\n\n• しばらく時間をおいてから再度お試しください\n• 数分後に再度アクセスしてください';
+    } else if (error.contains('Network error') || error.contains('Failed to fetch')) {
+      return '🌐 ネットワークエラーが発生しました\n\n• インターネット接続をご確認ください\n• Wi-Fiまたはモバイルデータ通信の状態をチェック\n• しばらく時間をおいてから再度お試しください';
     } else {
       return '❌ 認証エラーが発生しました\n\n• エラー詳細: $error\n• ネットワーク接続をご確認ください\n• 問題が続く場合は、しばらく時間をおいてから再度お試しください';
     }
